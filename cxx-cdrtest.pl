@@ -80,11 +80,21 @@ my $workaround_no_union = 0; # was some C++ issue, don't remember the details
 # std::variant troubles (https://github.com/eclipse-cyclonedds/cyclonedds-cxx/issues/127)
 # mostly solved, but not quite
 my $workaround_unique_types_in_union = 0;
-my $workaround_no_bitmask_in_union = 1;
-my $workaround_no_enum_in_union = 1;
+my $workaround_no_bitmask_in_union = 0;
+my $workaround_no_enum_in_union = 0;
 # arrays are a different problem I think, but I don't remember the details
 # https://github.com/eclipse-cyclonedds/cyclonedds-cxx/issues/132
-my $workaround_no_arrays_in_union = 1;
+my $workaround_no_arrays_in_union = 0;
+# something's fishy even with PR#235, perhaps restricting the array element type helps;
+# undef (or use .*) to allow anything
+#
+# In file included from xxx-types.cpp:9:
+# ./xxx-types.hpp:5583:50: error: use of undeclared identifier 'prop'; did you mean 'props'?
+#       if (!write(streamer, instance.a00019()[0], prop, instance.a00019().size()))
+#                                                  ^~~~
+#                                                  props
+# a00019 is an enum
+my $workaround_allowed_array_types_in_union; # = '^(?:u\d+|bm|enu)$';
 # C compiler backend must put "default" label last in VM, but it doesn't
 # https://github.com/eclipse-cyclonedds/cyclonedds/issues/874
 my $workaround_default_always_last = 1;
@@ -1117,6 +1127,10 @@ sub genuni {
       push @ts, ($whattodo < 0.1 ? "combine" : "skip");
     } else {
       my $t = gentype($_[0] + 1, @unicaseprobs);
+      if (defined $workaround_allowed_array_types_in_union) {
+        # discard any array of non-primitive type
+        next GENTYPE if $t->[0] eq "ary" && $t->[2]->[0] !~ /$workaround_allowed_array_types_in_union/o;
+      }
       if ($workaround_unique_types_in_union) {
         # Because std::variant doesn't like the same type occurring multiple times among
         # its arguments, we have to work around IDLC blindly copying the cases.
